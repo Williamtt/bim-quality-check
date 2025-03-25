@@ -7,7 +7,9 @@ const mongoose = require('mongoose');
 
 // 載入環境變數
 dotenv.config();
-
+// 測試環境變數是否正確載入
+console.log('Forge Client ID:', process.env.FORGE_CLIENT_ID ? '已設定' : '未設定');
+console.log('Forge Client Secret:', process.env.FORGE_CLIENT_SECRET ? '已設定' : '未設定');
 // 初始化 Express 應用程式
 const app = express();
 const PORT = process.env.PORT || 3000;

@@ -120,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
       progressBar.style.width = '20%';
       
       try {
+        console.log('正在創建存儲桶:', bucketName);
         const createBucketResponse = await fetch('/api/forge/buckets', {
           method: 'POST',
           headers: {
@@ -128,14 +129,30 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify({ bucketKey: bucketName })
         });
         
-        if (!createBucketResponse.ok && createBucketResponse.status !== 409) {
-          // 409 表示桶已存在，這是可以接受的
+        // 檢查響應狀態
+        console.log('創建存儲桶響應狀態:', createBucketResponse.status);
+        
+        if (!createBucketResponse.ok) {
           const errorData = await createBucketResponse.json();
-          throw new Error(errorData.error || '創建存儲桶失敗');
+          console.error('創建存儲桶錯誤詳情:', errorData);
+          
+          // 處理特定錯誤
+          if (createBucketResponse.status === 409) {
+            // 409 表示桶已存在，這是可以接受的
+            console.log('存儲桶已存在，繼續處理');
+          } else if (createBucketResponse.status === 401) {
+            // 401 表示未授權
+            throw new Error('Forge API 認證錯誤 (401)。請檢查 API 密鑰是否有效，或者是否已過期。詳情: ' + (errorData.error || '未知錯誤'));
+          } else {
+            throw new Error(errorData.error || `創建存儲桶失敗 (${createBucketResponse.status})`);
+          }
+        } else {
+          console.log('存儲桶創建成功');
         }
       } catch (error) {
+        console.error('創建存儲桶過程中發生錯誤:', error);
         // 忽略桶已存在的錯誤
-        if (!error.message.includes('already exists')) {
+        if (!error.message.includes('already exists') && !error.message.includes('409')) {
           throw error;
         }
       }
@@ -147,14 +164,53 @@ document.addEventListener('DOMContentLoaded', () => {
       const formData = new FormData();
       formData.append('model', modelFile);
       
-      const uploadResponse = await fetch(`/api/forge/buckets/${bucketName}/objects`, {
-        method: 'POST',
-        body: formData
-      });
+      // 設置較長的超時時間
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5分鐘超時
       
-      if (!uploadResponse.ok) {
-        const errorData = await uploadResponse.json();
-        throw new Error(errorData.error || '上傳模型失敗');
+      try {
+        const uploadResponse = await fetch(`/api/forge/buckets/${bucketName}/objects`, {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal
+        });
+        
+        // 清除超時計時器
+        clearTimeout(timeoutId);
+        
+        if (!uploadResponse.ok) {
+          const errorData = await uploadResponse.json();
+          
+          // 特殊處理 503 錯誤（服務暫時不可用）
+          if (uploadResponse.status === 503) {
+            const retryAfter = uploadResponse.headers.get('Retry-After') || errorData.retryAfter || '300';
+            const retryAfterSeconds = parseInt(retryAfter, 10);
+            const retryAfterMinutes = Math.ceil(retryAfterSeconds / 60);
+            
+            throw new Error(`Forge 服務暫時不可用 (503)。${errorData.details || '服務器暫時過載或正在維護。'} 請在約 ${retryAfterMinutes} 分鐘後重試。`);
+          }
+          
+          // 處理網絡錯誤
+          if (errorData.errorCode || errorData.errorMessage && errorData.errorMessage.includes('socket hang up')) {
+            throw new Error(`網絡連接問題: ${errorData.errorMessage || '連接中斷'}。請檢查您的網絡連接並稍後再試。`);
+          }
+          
+          throw new Error(errorData.error || '上傳模型失敗');
+        }
+      } catch (fetchError) {
+        // 處理 AbortController 中止的情況
+        if (fetchError.name === 'AbortError') {
+          throw new Error('上傳請求超時。請檢查您的網絡連接或嘗試上傳較小的文件。');
+        }
+        
+        // 處理其他網絡錯誤
+        if (fetchError.message.includes('NetworkError') || 
+            fetchError.message.includes('network') || 
+            fetchError.message.includes('socket hang up')) {
+          throw new Error(`網絡連接問題: ${fetchError.message}。請檢查您的網絡連接並稍後再試。`);
+        }
+        
+        throw fetchError;
       }
       
       const uploadData = await uploadResponse.json();
@@ -176,6 +232,16 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (!translateResponse.ok) {
         const errorData = await translateResponse.json();
+        
+        // 特殊處理 503 錯誤（服務暫時不可用）
+        if (translateResponse.status === 503) {
+          const retryAfter = translateResponse.headers.get('Retry-After') || errorData.retryAfter || '300';
+          const retryAfterSeconds = parseInt(retryAfter, 10);
+          const retryAfterMinutes = Math.ceil(retryAfterSeconds / 60);
+          
+          throw new Error(`Forge 服務暫時不可用 (503)。${errorData.details || '服務器暫時過載或正在維護。'} 請在約 ${retryAfterMinutes} 分鐘後重試。`);
+        }
+        
         throw new Error(errorData.error || '轉換模型失敗');
       }
       
@@ -192,7 +258,22 @@ document.addEventListener('DOMContentLoaded', () => {
           const statusResponse = await fetch(`/api/forge/models/${translateData.urn}/status`);
           
           if (!statusResponse.ok) {
-            throw new Error('檢查轉換狀態失敗');
+            const errorData = await statusResponse.json();
+            
+            // 特殊處理 503 錯誤（服務暫時不可用）
+            if (statusResponse.status === 503) {
+              const retryAfter = statusResponse.headers.get('Retry-After') || errorData.retryAfter || '60';
+              const retryAfterSeconds = parseInt(retryAfter, 10);
+              
+              console.log(`Forge 服務暫時不可用 (503)，將在 ${retryAfterSeconds} 秒後重試...`);
+              progressText.textContent = `模型轉換檢查暫時不可用，將在 ${retryAfterSeconds} 秒後重試...`;
+              
+              // 等待指定時間後重試
+              setTimeout(checkTranslationStatus, retryAfterSeconds * 1000);
+              return;
+            }
+            
+            throw new Error(errorData.error || '檢查轉換狀態失敗');
           }
           
           const statusData = await statusResponse.json();
@@ -243,7 +324,20 @@ document.addEventListener('DOMContentLoaded', () => {
       
     } catch (error) {
       console.error('上傳模型時發生錯誤:', error);
-      alert('上傳模型時發生錯誤: ' + error.message);
+      
+      // 根據錯誤類型提供更具體的錯誤信息
+      let errorMessage = error.message;
+      
+      // 處理特定錯誤類型
+      if (error.message.includes('socket hang up')) {
+        errorMessage = '網絡連接中斷。請檢查您的網絡連接並稍後再試。';
+      } else if (error.message.includes('NetworkError') || error.message.includes('network')) {
+        errorMessage = '網絡連接問題。請檢查您的網絡連接並稍後再試。';
+      } else if (error.message.includes('timeout') || error.message.includes('timed out')) {
+        errorMessage = '請求超時。請檢查您的網絡連接或嘗試上傳較小的文件。';
+      }
+      
+      alert('上傳模型時發生錯誤: ' + errorMessage);
       document.getElementById('uploadModelSubmit').disabled = false;
       
       // 移除進度條
