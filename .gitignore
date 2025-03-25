@@ -1,0 +1,19 @@
+# 環境變數
+.env
+
+# 依賴包
+node_modules/
+
+# 日誌檔
+logs
+*.log
+npm-debug.log*
+
+# 上傳檔案資料夾（視情況而定）
+# public/uploads/
+
+# 運行時資料
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BIM 品質檢查系統</title>
+  
+  <!-- Autodesk Forge Viewer CSS -->
+  <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css">
+  
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  
+  <!-- 自訂 CSS -->
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">BIM 品質檢查系統</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav">
+          <li class="nav-item">
+            <a class="nav-link active" href="#">首頁</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#" id="uploadModelBtn">上傳模型</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#" id="helpBtn">使用說明</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container-fluid">
+    <div class="row">
+      <!-- 左側面板：模型瀏覽器 -->
+      <div class="col-md-2 p-0" id="modelBrowserPanel">
+        <div class="panel-heading">
+          <h5>模型瀏覽</h5>
+        </div>
+        <div id="modelBrowser"></div>
+      </div>
+      
+      <!-- 中央面板：3D 檢視器 -->
+      <div class="col-md-7 p-0" id="viewerContainer">
+        <div id="forgeViewer"></div>
+      </div>
+      
+      <!-- 右側面板：品質檢查資訊 -->
+      <div class="col-md-3 p-0" id="documentPanel">
+        <div class="panel-heading">
+          <h5>品質檢查文件</h5>
+        </div>
+        <div class="panel-content">
+          <div id="documentList">
+            <!-- 文件列表會動態載入 -->
+            <div class="text-center pt-5" id="noDocumentsMessage">
+              <p>請在模型中選擇位置以查看或上傳檢查文件</p>
+            </div>
+          </div>
+          <div id="documentDetail" style="display: none;">
+            <!-- 文件詳情會動態載入 -->
+          </div>
+        </div>
+        <div class="panel-footer">
+          <button type="button" class="btn btn-primary w-100" id="addDocumentBtn" disabled>
+            <i class="fas fa-plus"></i> 新增品質檢查文件
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 上傳模型對話框 -->
+  <div class="modal fade" id="uploadModelModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">上傳 BIM 模型</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="uploadModelForm">
+            <div class="mb-3">
+              <label for="bucketName" class="form-label">存儲桶名稱</label>
+              <input type="text" class="form-control" id="bucketName" placeholder="輸入唯一的存儲桶名稱" required>
+              <div class="form-text">名稱只能包含小寫字母、數字和短橫線</div>
+            </div>
+            <div class="mb-3">
+              <label for="modelFile" class="form-label">模型檔案</label>
+              <input type="file" class="form-control" id="modelFile" accept=".rvt, .rfa, .dwg, .nwd, .3dm, .ifc" required>
+              <div class="form-text">支援 Revit、AutoCAD、Navisworks、Rhino 和 IFC 檔案</div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" id="uploadModelSubmit">上傳</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 上傳文件對話框 -->
+  <div class="modal fade" id="uploadDocumentModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">上傳品質檢查文件</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="uploadDocumentForm">
+            <div class="mb-3">
+              <label for="docTitle" class="form-label">標題</label>
+              <input type="text" class="form-control" id="docTitle" required>
+            </div>
+            <div class="mb-3">
+              <label for="docDescription" class="form-label">描述</label>
+              <textarea class="form-control" id="docDescription" rows="3"></textarea>
+            </div>
+            <div class="mb-3">
+              <label for="inspector" class="form-label">檢查人員</label>
+              <input type="text" class="form-control" id="inspector" required>
+            </div>
+            <div class="mb-3">
+              <label for="status" class="form-label">狀態</label>
+              <select class="form-select" id="status">
+                <option value="pending">待處理</option>
+                <option value="passed">通過</option>
+                <option value="failed">不通過</option>
+                <option value="needs-review">需複查</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label for="documentFile" class="form-label">檢查文件</label>
+              <input type="file" class="form-control" id="documentFile" required>
+              <div class="form-text">支援圖片、PDF、Word 和 Excel 檔案</div>
+            </div>
+            <input type="hidden" id="modelUrn" value="">
+            <input type="hidden" id="positionX" value="">
+            <input type="hidden" id="positionY" value="">
+            <input type="hidden" id="positionZ" value="">
+            <input type="hidden" id="elementId" value="">
+            <input type="hidden" id="elementDbId" value="">
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" id="uploadDocumentSubmit">上傳</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 文件預覽對話框 -->
+  <div class="modal fade" id="previewDocumentModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="previewDocumentTitle">文件預覽</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="previewDocumentBody">
+          <!-- 預覽內容會動態載入 -->
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+          <a href="#" class="btn btn-primary" id="downloadDocumentBtn" target="_blank">下載</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Autodesk Forge Viewer JS -->
+  <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+  
+  <!-- Bootstrap JS Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- 自訂 JS -->
+  <script src="js/forge-viewer.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
